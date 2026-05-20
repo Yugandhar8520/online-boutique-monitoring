@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: shippingservice
+  namespace: microservices
+
+spec:
+  replicas: 2
+
+  selector:
+    matchLabels:
+      app: shippingservice
+
+  template:
+    metadata:
+      labels:
+        app: shippingservice
+
+    spec:
+      containers:
+        - name: shippingservice
+
+          image: yugandhar25/shippingservice:v3
+
+          ports:
+            - containerPort: 50051
+
+          env:
+            - name: PORT
+              value: "50051"
+
+            - name: DISABLE_PROFILER
+              value: "1"
+
+            - name: DISABLE_TRACING
+              value: "1"
+
+---
+apiVersion: v1
+kind: Service
+
+metadata:
+  name: shippingservice
+  namespace: microservices
+
+spec:
+  selector:
+    app: shippingservice
+
+  ports:
+    - port: 50051
+      targetPort: 50051

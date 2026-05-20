@@ -1,0 +1,12 @@
+grafana:
+  assertNoLeakedSecrets: false
+
+  grafana.ini:
+    smtp:
+      enabled: true
+      host: smtp.gmail.com:587
+      user: yugandharreddy0258@gmail.com
+      password: gfta iwev vgen faxw
+      from_address: yugandharreddy0258@gmail.com
+      from_name: Grafana
+      skip_verify: true

@@ -26,18 +26,25 @@ import (
 	"time"
 
 	pb "github.com/GoogleCloudPlatform/microservices-demo/src/productcatalogservice/genproto"
+
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health"
+
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
-	"cloud.google.com/go/profiler"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+
 	"go.opentelemetry.io/otel"
+
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+
 	"go.opentelemetry.io/otel/propagation"
+
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+
 	"google.golang.org/grpc"
 )
 
@@ -53,6 +60,7 @@ var (
 
 func init() {
 	log = logrus.New()
+
 	log.Formatter = &logrus.JSONFormatter{
 		FieldMap: logrus.FieldMap{
 			logrus.FieldKeyTime:  "timestamp",
@@ -61,67 +69,107 @@ func init() {
 		},
 		TimestampFormat: time.RFC3339Nano,
 	}
+
 	log.Out = os.Stdout
+
 	catalogMutex = &sync.Mutex{}
 }
 
 func main() {
+
+	// Tracing
 	if os.Getenv("ENABLE_TRACING") == "1" {
+
 		err := initTracing()
+
 		if err != nil {
 			log.Warnf("warn: failed to start tracer: %+v", err)
 		}
+
 	} else {
 		log.Info("Tracing disabled.")
 	}
 
-	if os.Getenv("DISABLE_PROFILER") == "" {
-		log.Info("Profiling enabled.")
-		go initProfiling("productcatalogservice", "1.0.0")
-	} else {
-		log.Info("Profiling disabled.")
-	}
+	// Disable profiler completely
+	log.Info("Profiling disabled.")
 
 	flag.Parse()
 
-	// set injected latency
+	// Set injected latency
 	if s := os.Getenv("EXTRA_LATENCY"); s != "" {
+
 		v, err := time.ParseDuration(s)
+
 		if err != nil {
-			log.Fatalf("failed to parse EXTRA_LATENCY (%s) as time.Duration: %+v", v, err)
+			log.Fatalf(
+				"failed to parse EXTRA_LATENCY (%s) as time.Duration: %+v",
+				v,
+				err,
+			)
 		}
+
 		extraLatency = v
-		log.Infof("extra latency enabled (duration: %v)", extraLatency)
+
+		log.Infof(
+			"extra latency enabled (duration: %v)",
+			extraLatency,
+		)
+
 	} else {
 		extraLatency = time.Duration(0)
 	}
 
+	// Handle signals
 	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGUSR1, syscall.SIGUSR2)
+
+	signal.Notify(
+		sigs,
+		syscall.SIGUSR1,
+		syscall.SIGUSR2,
+	)
+
 	go func() {
+
 		for {
+
 			sig := <-sigs
+
 			log.Printf("Received signal: %s", sig)
+
 			if sig == syscall.SIGUSR1 {
+
 				reloadCatalog = true
+
 				log.Infof("Enable catalog reloading")
+
 			} else {
+
 				reloadCatalog = false
+
 				log.Infof("Disable catalog reloading")
 			}
 		}
 	}()
 
+	// Port
 	if os.Getenv("PORT") != "" {
 		port = os.Getenv("PORT")
 	}
+
 	log.Infof("starting grpc server at :%s", port)
+
 	run(port)
+
 	select {}
 }
 
 func run(port string) string {
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%s", port))
+
+	listener, err := net.Listen(
+		"tcp",
+		fmt.Sprintf(":%s", port),
+	)
+
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -129,21 +177,59 @@ func run(port string) string {
 	// Propagate trace context
 	otel.SetTextMapPropagator(
 		propagation.NewCompositeTextMapPropagator(
-			propagation.TraceContext{}, propagation.Baggage{}))
+			propagation.TraceContext{},
+			propagation.Baggage{},
+		),
+	)
+
 	var srv *grpc.Server
+
 	srv = grpc.NewServer(
-		grpc.StatsHandler(otelgrpc.NewServerHandler()))
+		grpc.StatsHandler(
+			otelgrpc.NewServerHandler(),
+		),
+	)
 
 	svc := &productCatalog{}
+
 	err = loadCatalog(&svc.catalog)
+
 	if err != nil {
-		log.Fatalf("could not parse product catalog: %v", err)
+		log.Fatalf(
+			"could not parse product catalog: %v",
+			err,
+		)
 	}
 
-	pb.RegisterProductCatalogServiceServer(srv, svc)
+	pb.RegisterProductCatalogServiceServer(
+		srv,
+		svc,
+	)
+
 	healthcheck := health.NewServer()
-	healthpb.RegisterHealthServer(srv, healthcheck)
-	go srv.Serve(listener)
+
+	healthpb.RegisterHealthServer(
+		srv,
+		healthcheck,
+	)
+
+	// Start gRPC server
+	go func() {
+
+		log.Infof(
+			"ProductCatalogService gRPC server started on port %s",
+			port,
+		)
+
+		if err := srv.Serve(listener); err != nil {
+
+			log.Fatalf(
+				"failed to serve grpc server: %v",
+				err,
+			)
+		}
+
+	}()
 
 	return listener.Addr().String()
 }
@@ -153,6 +239,7 @@ func initStats() {
 }
 
 func initTracing() error {
+
 	var (
 		collectorAddr string
 		collectorConn *grpc.ClientConn
@@ -160,58 +247,96 @@ func initTracing() error {
 
 	ctx := context.Background()
 
-	mustMapEnv(&collectorAddr, "COLLECTOR_SERVICE_ADDR")
-	mustConnGRPC(ctx, &collectorConn, collectorAddr)
+	mustMapEnv(
+		&collectorAddr,
+		"COLLECTOR_SERVICE_ADDR",
+	)
+
+	mustConnGRPC(
+		ctx,
+		&collectorConn,
+		collectorAddr,
+	)
 
 	exporter, err := otlptracegrpc.New(
 		ctx,
-		otlptracegrpc.WithGRPCConn(collectorConn))
+		otlptracegrpc.WithGRPCConn(
+			collectorConn,
+		),
+	)
+
 	if err != nil {
-		log.Warnf("warn: Failed to create trace exporter: %v", err)
+		log.Warnf(
+			"warn: Failed to create trace exporter: %v",
+			err,
+		)
 	}
+
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithBatcher(exporter),
-		sdktrace.WithSampler(sdktrace.AlwaysSample()))
+		sdktrace.WithSampler(
+			sdktrace.AlwaysSample(),
+		),
+	)
+
 	otel.SetTracerProvider(tp)
+
 	return err
 }
 
-func initProfiling(service, version string) {
-	for i := 1; i <= 3; i++ {
-		if err := profiler.Start(profiler.Config{
-			Service:        service,
-			ServiceVersion: version,
-			// ProjectID must be set if not running on GCP.
-			// ProjectID: "my-project",
-		}); err != nil {
-			log.Warnf("failed to start profiler: %+v", err)
-		} else {
-			log.Info("started Stackdriver profiler")
-			return
-		}
-		d := time.Second * 10 * time.Duration(i)
-		log.Infof("sleeping %v to retry initializing Stackdriver profiler", d)
-		time.Sleep(d)
-	}
-	log.Warn("could not initialize Stackdriver profiler after retrying, giving up")
-}
+func mustMapEnv(
+	target *string,
+	envKey string,
+) {
 
-func mustMapEnv(target *string, envKey string) {
 	v := os.Getenv(envKey)
+
 	if v == "" {
-		panic(fmt.Sprintf("environment variable %q not set", envKey))
+
+		panic(
+			fmt.Sprintf(
+				"environment variable %q not set",
+				envKey,
+			),
+		)
 	}
+
 	*target = v
 }
 
-func mustConnGRPC(ctx context.Context, conn **grpc.ClientConn, addr string) {
+func mustConnGRPC(
+	ctx context.Context,
+	conn **grpc.ClientConn,
+	addr string,
+) {
+
 	var err error
-	_, cancel := context.WithTimeout(ctx, time.Second*3)
+
+	_, cancel := context.WithTimeout(
+		ctx,
+		time.Second*3,
+	)
+
 	defer cancel()
-	*conn, err = grpc.NewClient(addr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
+
+	*conn, err = grpc.NewClient(
+		addr,
+		grpc.WithTransportCredentials(
+			insecure.NewCredentials(),
+		),
+		grpc.WithStatsHandler(
+			otelgrpc.NewClientHandler(),
+		),
+	)
+
 	if err != nil {
-		panic(errors.Wrapf(err, "grpc: failed to connect %s", addr))
+
+		panic(
+			errors.Wrapf(
+				err,
+				"grpc: failed to connect %s",
+				addr,
+			),
+		)
 	}
 }
