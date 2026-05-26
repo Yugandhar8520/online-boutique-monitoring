@@ -6,7 +6,7 @@ metadata:
   namespace: microservices
 
 spec:
-  replicas: 2
+  replicas: 1
 
   selector:
     matchLabels:
@@ -22,6 +22,7 @@ spec:
       - name: cartservice
 
         image: yugandhar25/cartservice:v1
+        imagePullPolicy: Always
 
         ports:
         - containerPort: 7070
@@ -29,7 +30,18 @@ spec:
         env:
         - name: REDIS_ADDR
           value: "redis-cart:6379"
-          
+
+        readinessProbe:
+          tcpSocket:
+            port: 7070
+          initialDelaySeconds: 5
+          periodSeconds: 10
+
+        livenessProbe:
+          tcpSocket:
+            port: 7070
+          initialDelaySeconds: 15
+          periodSeconds: 20
 
 ---
 apiVersion: v1
