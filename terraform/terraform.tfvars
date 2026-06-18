@@ -1,0 +1,5 @@
+aws_region    = "eu-north-1"
+ami_id        = "ami-0aba19e56f3eaec05"
+instance_type = "t3.small"
+subnet_id     = "subnet-00f8e5d295486aeae"
+key_name      = "man"
