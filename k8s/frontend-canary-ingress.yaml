@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: frontend-canary
+  namespace: microservices
+
+  annotations:
+    nginx.ingress.kubernetes.io/canary: "true"
+    nginx.ingress.kubernetes.io/canary-weight: "10"
+
+spec:
+  ingressClassName: nginx
+
+  rules:
+  - http:
+      paths:
+      - path: /
+        pathType: Prefix
+
+        backend:
+          service:
+            name: frontend-v2
+            port:
+              number: 80
